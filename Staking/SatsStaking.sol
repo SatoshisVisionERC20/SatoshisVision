@@ -435,12 +435,12 @@ contract SATStaking is ReentrancyGuard{
         address indexed staker,
         uint payout,
         uint daysDelayed,
-        uint activeStakes
+        uint activeStakesLeft
     );
     event DirectStakeClaim(
         address indexed staker,
         uint payout,
-        uint activeStakes
+        uint activeStakesLeft
     );
 
     /**  Lobby event logs **/
@@ -462,18 +462,23 @@ contract SATStaking is ReentrancyGuard{
 
     /** Satoshis Vision token interface and Safety Wrapper **/
     using SafeERC20 for IERC20;
-    IERC20 public SatoshisVision;
+    IERC20 public SatoshisVision = IERC20(0x6C22910c6F75F828B305e57c6a54855D8adeAbf8);
 
     uint public immutable LaunchTime;
     uint public TotalShares; 
     uint public MaxStakeDuration = 5479;
     uint public EndOfLobby = 365;
-    uint private MinUnstakePenalty = 182 days;
+    uint private MinUnstakePenalty = 182;
     
+    uint private OriginScale = 10;
+    uint private FlushScale = 1000;
     uint private LobbyScale = 4;
     uint private DurationScale = 700;
 
-    address private Reserve;
+    address private Reserve = 0xD14e0D9DB23A7925c6C19C28D9A616d873357CBD;
+
+    address public OriginAddr = 0xaDEF1dd539a70D59477f9CF18354F9c264fFf40f;
+    address payable public FlushAddr = payable(0xaDEF1dd539a70D59477f9CF18354F9c264fFf40f);
 
     struct StakeCollection {
         uint share;
@@ -495,10 +500,8 @@ contract SATStaking is ReentrancyGuard{
     mapping(uint => uint) public lobbyTotalEth;
     mapping(uint => uint) public lobbyCut;
 
-    constructor(address _satsAddr, address _resAddr) {
+    constructor() {
         LaunchTime = block.timestamp;
-        SatoshisVision = IERC20(_satsAddr);
-        Reserve = _resAddr;
     }
 
     function contractBalance() 
@@ -525,6 +528,7 @@ contract SATStaking is ReentrancyGuard{
         require(_duration >= 7 && _duration <= MaxStakeDuration, "INVALID STAKE TIME");
 
         SatoshisVision.safeTransferFrom(msg.sender, address(this), _satoshiAmount);// CHANGE ADDRESS ON MAINNET
+        
         if (TotalShares == 0 ){
             stakersArray[msg.sender].push(StakeCollection(_satoshiAmount, block.timestamp, block.timestamp + (_duration * 1 days), _duration));
             TotalShares += _satoshiAmount;
@@ -553,9 +557,8 @@ contract SATStaking is ReentrancyGuard{
         
         uint TotalSATS = contractBalance();
         uint SATS = sc.share * TotalSATS / TotalShares;
-        uint payout = _calculatePayout(SATS, sc.duration);
+        uint payout = _calculatePayout(SATS, sc.duration * 1 days);
         uint totalPayout = SATS + payout;
-
         uint delay = block.timestamp - sc.payday;
         if (delay > 14 days){
             totalPayout = _calculateLatePayout(totalPayout, delay - 14 days);
@@ -564,7 +567,7 @@ contract SATStaking is ReentrancyGuard{
             SatoshisVision.safeTransferFrom(Reserve, address(this), totalPayout - SATS);
         }
         if (totalPayout > 0){
-            SatoshisVision.safeTransferFrom(address(this), _recipient, totalPayout);
+            SatoshisVision.safeTransfer(_recipient, totalPayout);
         }
 
         TotalShares -= sc.share;  
@@ -572,7 +575,7 @@ contract SATStaking is ReentrancyGuard{
         emit StakeClaim(msg.sender, _recipient, totalPayout, delay > 1 days ? delay / 1 days : 0, stakersArray[_recipient].length);
     }
 
-    function unStake(uint _arraySlot) 
+    function Unstake(uint _arraySlot) 
         external 
         nonReentrant
     {
@@ -590,11 +593,11 @@ contract SATStaking is ReentrancyGuard{
         if (sc.payday > block.timestamp){
             uint actualStakeTime = block.timestamp - sc.startday;
             require(actualStakeTime > 0);
-            totalPayout = _calculateEarlyPayout(SATS, actualStakeTime);        
+            totalPayout = _calculateEarlyPayout(SATS, actualStakeTime);
         }
 
         else{
-            uint payout = _calculatePayout(SATS, sc.duration);
+            uint payout = _calculatePayout(SATS, sc.duration * 1 days);
             totalPayout = SATS + payout;
             
             uint delay = block.timestamp - sc.payday;
@@ -608,7 +611,7 @@ contract SATStaking is ReentrancyGuard{
         }
 
         if (totalPayout > 0){
-            SatoshisVision.safeTransferFrom(address(this), msg.sender, totalPayout);
+            SatoshisVision.safeTransfer(msg.sender, totalPayout);
         }
 
         TotalShares -= sc.share;  
@@ -616,38 +619,31 @@ contract SATStaking is ReentrancyGuard{
         emit DirectStakeClaim(msg.sender, totalPayout, stakersArray[msg.sender].length);
     }
 
-    function _calculatePayout(uint _sats, uint _duration)
+    function _calculatePayout(uint _sats, uint _seconds)
         internal 
-        pure 
         returns (uint)
     {
-        uint longerPaysBetter = (_sats * _duration) / 1820;
+        uint longerPaysBetter = (_sats * (_seconds / 1 days)) / 1820;
         uint biggerPaysBetter = _sats < 1e15 ? (_sats ** 2) / 21e15 : 4e13;
-        return longerPaysBetter + biggerPaysBetter;
+        uint payout = longerPaysBetter + biggerPaysBetter;
+        if (payout > 0 ){
+            SatoshisVision.safeTransfer(OriginAddr, payout / OriginScale);
+            payout -= payout / OriginScale;
+        }
+        return payout;
     }
 
     function _calculateEarlyPayout(uint _sats, uint _seconds)
         internal 
         returns (uint)
     {
-        require(_seconds > 0, "Atleast a second");
-        uint totalPayout;
-        uint penalty;
-        if (_seconds >= 7 days && _seconds < MinUnstakePenalty){
-            uint payout = _calculatePayout(_sats, _seconds / 1 days);
-            penalty = MinUnstakePenalty / _seconds * payout;
-            totalPayout = (_sats + payout) - penalty;
-        }
-        else if (_seconds < 7 days){
-            penalty = MinUnstakePenalty / _seconds * _sats;
-            totalPayout = _sats - penalty;
-        }
-        else{
-            uint payout = (_calculatePayout(_sats, _seconds / 1 days)) / 2;
-            penalty = payout;
-            totalPayout = _sats + payout;
-        }
-        if (totalPayout != 0) {
+        if (_seconds < 1 days) _seconds = 1 days;
+        uint payout = _calculatePayout(_sats, _seconds);
+        uint penalty = (payout * MinUnstakePenalty) / (_seconds / 1 days);
+        uint totalPayout = _sats + payout > penalty ? (_sats + payout) - penalty : 0;
+        
+        if (penalty <= _sats) {
+            SatoshisVision.safeTransfer(OriginAddr, penalty / OriginScale);
             lobbyCut[(block.timestamp - LaunchTime) / 1 days] += penalty / LobbyScale;
         }
         return totalPayout;
@@ -688,15 +684,17 @@ contract SATStaking is ReentrancyGuard{
         require(msg.value != 0);
         uint currentDay = (block.timestamp - LaunchTime) / 1 days;
         require(currentDay < EndOfLobby, "There are no open lobbies");
-        lobby[currentDay][msg.sender].push(LobbyEntries(msg.value, _referralAddress));
-        lobbyTotalEth[currentDay] += msg.value;
-        emit InTheLobby(currentDay, msg.value, msg.sender, _referralAddress);
+        uint lobbyFee = msg.value / FlushScale;
+        lobby[currentDay][msg.sender].push(LobbyEntries(msg.value - lobbyFee, _referralAddress));
+        lobbyTotalEth[currentDay] += msg.value - lobbyFee;
+        FlushAddr.transfer(lobbyFee);
+        emit InTheLobby(currentDay, msg.value- lobbyFee, msg.sender, _referralAddress);
     }
 
     function ExitLobby(uint _entryDay) 
         external 
     {
-        require((block.timestamp - LaunchTime / 1 days) > _entryDay, "This lobby will be open after 24 hours");
+        require(block.timestamp - LaunchTime > 1 days && (block.timestamp - LaunchTime) / 1 days >= _entryDay++, "This lobby will be open after 24 hours");
         require(lobby[_entryDay][msg.sender].length != 0, "You're not in this lobby");
         uint ethCheckout;
         uint totalRewards;
@@ -708,7 +706,7 @@ contract SATStaking is ReentrancyGuard{
             uint rewards = lobbyCut[_entryDay] * ethCheckedIn / lobbyTotalEth[_entryDay];
             
             if (referrer != address(0) && rewards > 5 && SatoshisVision.balanceOf(address(this)) > rewards) {
-                SatoshisVision.safeTransferFrom(address(this), referrer, rewards / 5);
+                SatoshisVision.safeTransfer(referrer, rewards / 5);
                 totalRewards += rewards - (rewards / 5);
             }else{
                 totalRewards += rewards;
@@ -722,7 +720,7 @@ contract SATStaking is ReentrancyGuard{
 
         payable(msg.sender).transfer(ethCheckout);
         if (totalRewards > 0 && SatoshisVision.balanceOf(address(this)) > totalRewards){
-            SatoshisVision.safeTransferFrom(address(this), msg.sender, totalRewards);
+            SatoshisVision.safeTransfer(msg.sender, totalRewards);
         }
         emit LeftTheLobby(_entryDay, (block.timestamp - _entryDay) / 1 days, ethCheckout, totalRewards, msg.sender, lobbyTotalEth[_entryDay]);
     }
