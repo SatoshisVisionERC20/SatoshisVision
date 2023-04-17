@@ -1,0 +1,19 @@
+Peer Cash - Decentralized Mixer for ETH and BNB
+Peer Cash is a decentralized mixer for cryptocurrencies that focuses on providing privacy and anonymity to users who transact with ETH (Ethereum) and BNB (Binance Coin) cryptocurrencies. Peer Cash allows users to mix their cryptocurrency transactions in a decentralized and trustless manner, making it difficult for anyone to trace or link transactions to specific individuals or addresses.
+
+How Peer Cash Works
+Peer Cash utilizes a mixing algorithm that combines multiple transactions from different users into a single transaction with multiple outputs. These outputs are then distributed to the respective destination addresses, making it challenging to trace the original sender or recipient. Peer Cash operates on a peer-to-peer network, where users can join as peers and participate in the mixing process.
+
+Here's a high-level overview of how Peer Cash works:
+
+Registration: Users can register as peers on the Peer Cash platform and generate a unique public and private key pair for authentication and encryption purposes.
+
+Deposit: Users can deposit ETH or BNB into their Peer Cash wallet, which acts as the source of funds for mixing transactions.
+
+Mixing Transactions: Users can create mixing transactions by specifying the desired amount to mix, the destination address, and the number of peers to participate in the mixing process. Peer Cash randomly selects peers from the network to participate in the mixing process, and the transaction is executed once the required number of peers is reached.
+
+Distribution of Outputs: Once the mixing transaction is executed, the outputs are distributed to the respective destination addresses, making it challenging to trace the original sender or recipient.
+
+Withdrawal: Users can withdraw the mixed funds from their Peer Cash wallet to their desired destination address.
+
+Peer Verification: Peer Cash uses a consensus mechanism to verify the authenticity and integrity of participating peers to ensure the privacy and security of the mixing process.
